@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Demetherm — Frost Risk Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0a0c0f;
+    --surface:   #111418;
+    --surface2:  #0d1014;
+    --border:    #1e2328;
+    --border2:   #2a3040;
+    --text:      #c8d0dc;
+    --dim:       #5a6475;
+    --accent:    #4a9eff;
+    --low:       #1a3a2a;
+    --low-text:  #3ddc84;
+    --mod:       #3a2e10;
+    --mod-text:  #f5c542;
+    --high:      #3a1a10;
+    --high-text: #ff7043;
+    --crit:      #3a0a0a;
+    --crit-text: #ff1744;
+    --conf-hi:   #1a3a2a;
+    --conf-hi-t: #3ddc84;
+    --conf-mid:  #3a2e10;
+    --conf-mid-t:#f5c542;
+    --conf-lo:   #3a1a10;
+    --conf-lo-t: #ff7043;
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+- { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+background: var(–bg);
+color: var(–text);
+font-family: var(–sans);
+font-size: 14px;
+line-height: 1.6;
+min-height: 100vh;
+}
+
+header {
+border-bottom: 1px solid var(–border);
+padding: 20px 32px;
+display: flex;
+align-items: center;
+justify-content: space-between;
+position: sticky;
+top: 0;
+background: var(–bg);
+z-index: 100;
+}
+
+.logo {
+font-family: var(–mono);
+font-size: 13px;
+letter-spacing: 0.2em;
+text-transform: uppercase;
+color: var(–accent);
+}
+.logo span { color: var(–dim); }
+
+#status-bar {
+font-family: var(–mono);
+font-size: 11px;
+color: var(–dim);
+display: flex;
+align-items: center;
+gap: 16px;
+}
+
+#status-dot {
+width: 7px; height: 7px;
+border-radius: 50%;
+background: var(–dim);
+display: inline-block;
+transition: background 0.4s;
+}
+#status-dot.loading { background: var(–mod-text); animation: pulse 1s infinite; }
+#status-dot.ok      { background: var(–low-text); }
+#status-dot.error   { background: var(–crit-text); }
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+#alert-banner {
+display: none;
+margin: 20px 32px 0;
+padding: 14px 20px;
+border-left: 3px solid var(–high-text);
+background: var(–high);
+font-family: var(–mono);
+font-size: 12px;
+color: var(–high-text);
+letter-spacing: 0.05em;
+animation: slideIn 0.4s ease;
+}
+#alert-banner.critical {
+border-color: var(–crit-text);
+background: var(–crit);
+color: var(–crit-text);
+}
+@keyframes slideIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:none} }
+
+main { padding: 24px 32px 48px; }
+
+.summary-strip {
+display: grid;
+grid-template-columns: repeat(3, 1fr);
+gap: 12px;
+margin-bottom: 28px;
+}
+
+.summary-card {
+border: 1px solid var(–border);
+border-top: 2px solid var(–border);
+background: var(–surface);
+padding: 16px 20px;
+opacity: 0;
+transform: translateY(12px);
+transition: opacity 0.4s, transform 0.4s;
+}
+.summary-card.visible { opacity: 1; transform: none; }
+.summary-card .site-name {
+font-family: var(–mono);
+font-size: 10px;
+letter-spacing: 0.15em;
+text-transform: uppercase;
+color: var(–dim);
+margin-bottom: 8px;
+}
+.summary-card .worst-night {
+font-family: var(–mono);
+font-size: 22px;
+font-weight: 700;
+line-height: 1;
+margin-bottom: 4px;
+}
+.summary-card .worst-label { font-size: 11px; color: var(–dim); }
+.summary-card .spread-note {
+font-family: var(–mono);
+font-size: 10px;
+color: var(–dim);
+margin-top: 4px;
+}
+.summary-card .risk-badge {
+display: inline-block;
+margin-top: 10px;
+padding: 3px 10px;
+font-family: var(–mono);
+font-size: 10px;
+letter-spacing: 0.15em;
+font-weight: 700;
+}
+
+.legend {
+display: flex;
+gap: 20px;
+margin-bottom: 20px;
+flex-wrap: wrap;
+align-items: center;
+}
+.legend-item {
+font-family: var(–mono);
+font-size: 10px;
+color: var(–dim);
+display: flex;
+align-items: center;
+gap: 6px;
+}
+.legend-dot {
+width: 8px; height: 8px;
+border-radius: 50%;
+flex-shrink: 0;
+}
+
+.site-section {
+margin-bottom: 40px;
+opacity: 0;
+transform: translateY(16px);
+transition: opacity 0.5s, transform 0.5s;
+}
+.site-section.visible { opacity: 1; transform: none; }
+
+.site-header {
+display: flex;
+align-items: baseline;
+gap: 16px;
+padding-bottom: 10px;
+margin-bottom: 0;
+border-bottom: 1px solid var(–border);
+}
+.site-header h2 {
+font-family: var(–mono);
+font-size: 13px;
+letter-spacing: 0.1em;
+text-transform: uppercase;
+color: var(–text);
+font-weight: 700;
+}
+.site-meta {
+font-family: var(–mono);
+font-size: 10px;
+color: var(–dim);
+letter-spacing: 0.05em;
+}
+
+.forecast-table {
+width: 100%;
+border-collapse: collapse;
+margin-top: 12px;
+font-family: var(–mono);
+font-size: 12px;
+}
+.forecast-table th {
+text-align: left;
+padding: 6px 12px;
+color: var(–dim);
+font-size: 10px;
+letter-spacing: 0.12em;
+text-transform: uppercase;
+border-bottom: 1px solid var(–border);
+font-weight: 400;
+}
+
+/* Summary rows */
+.row-summary td {
+padding: 10px 12px;
+border-bottom: 1px solid var(–border);
+white-space: nowrap;
+cursor: pointer;
+user-select: none;
+transition: background 0.15s;
+}
+.row-summary:hover td { background: rgba(255,255,255,0.025); }
+.row-summary.expanded td {
+background: rgba(74,158,255,0.05);
+border-bottom-color: transparent;
+}
+
+.expand-icon {
+display: inline-block;
+font-size: 9px;
+color: var(–dim);
+transition: transform 0.22s ease;
+margin-right: 7px;
+vertical-align: middle;
+}
+.row-summary.expanded .expand-icon {
+transform: rotate(90deg);
+color: var(–accent);
+}
+
+/* Detail rows */
+.row-detail { display: none; }
+.row-detail.open { display: table-row; }
+
+.row-detail > td {
+padding: 0;
+border-bottom: 1px solid var(–border);
+background: var(–surface2);
+}
+
+.detail-inner {
+padding: 16px 20px 20px 32px;
+}
+
+.detail-grid {
+display: grid;
+grid-template-columns: 1fr 1fr;
+gap: 16px 40px;
+}
+
+.detail-section-title {
+font-size: 9px;
+letter-spacing: 0.18em;
+text-transform: uppercase;
+color: var(–dim);
+margin-bottom: 8px;
+font-family: var(–mono);
+}
+
+.model-table {
+width: 100%;
+border-collapse: collapse;
+font-family: var(–mono);
+font-size: 11px;
+}
+.model-table th {
+text-align: left;
+padding: 3px 10px;
+color: var(–dim);
+font-size: 9px;
+letter-spacing: 0.1em;
+text-transform: uppercase;
+border-bottom: 1px solid var(–border);
+font-weight: 400;
+}
+.model-table td {
+padding: 5px 10px;
+border-bottom: 1px solid var(–border);
+}
+.model-table tr:last-child td { border-bottom: none; }
+.model-coldest { color: var(–high-text); }
+.model-warmest { color: var(–low-text); }
+
+.confidence-block {
+margin-top: 10px;
+padding: 8px 12px;
+font-family: var(–mono);
+font-size: 11px;
+border-left: 2px solid;
+}
+.conf-HIGH   { border-color: var(–conf-hi-t);  background: var(–conf-hi);  color: var(–conf-hi-t); }
+.conf-MEDIUM { border-color: var(–conf-mid-t); background: var(–conf-mid); color: var(–conf-mid-t); }
+.conf-LOW    { border-color: var(–conf-lo-t);  background: var(–conf-lo);  color: var(–conf-lo-t); }
+
+.conditions-list {
+font-family: var(–mono);
+font-size: 11px;
+display: flex;
+flex-direction: column;
+gap: 6px;
+}
+.cond-row { display: flex; justify-content: space-between; gap: 16px; }
+.cond-label { color: var(–dim); }
+.cond-value { color: var(–text); }
+
+/* Badges */
+.risk-cell {
+font-weight: 700;
+font-size: 10px;
+letter-spacing: 0.12em;
+padding: 3px 8px;
+display: inline-block;
+}
+.risk-LOW      { background: var(–low);  color: var(–low-text); }
+.risk-MODERATE { background: var(–mod);  color: var(–mod-text); }
+.risk-HIGH     { background: var(–high); color: var(–high-text); }
+.risk-CRITICAL { background: var(–crit); color: var(–crit-text); }
+
+.card-LOW      { border-top-color: var(–low-text)  !important; }
+.card-MODERATE { border-top-color: var(–mod-text)  !important; }
+.card-HIGH     { border-top-color: var(–high-text) !important; }
+.card-CRITICAL { border-top-color: var(–crit-text) !important; }
+
+.spread-pill {
+display: inline-block;
+padding: 2px 7px;
+font-size: 10px;
+border-radius: 2px;
+font-family: var(–mono);
+}
+.spread-tight  { background: var(–conf-hi);  color: var(–conf-hi-t); }
+.spread-medium { background: var(–conf-mid); color: var(–conf-mid-t); }
+.spread-wide   { background: var(–conf-lo);  color: var(–conf-lo-t); }
+
+.temp-corrected { color: #fff; font-weight: 700; }
+.temp-negative  { color: var(–high-text) !important; }
+.temp-marginal  { color: var(–mod-text)  !important; }
+.type-radiation { color: #7cb9ff; }
+.type-advection { color: #ffb347; }
+.type-mixed     { color: #a0a8b8; }
+
+.action-box {
+margin-top: 10px;
+padding: 10px 14px;
+border-left: 2px solid var(–border2);
+font-size: 12px;
+color: var(–dim);
+}
+
+footer {
+border-top: 1px solid var(–border);
+padding: 16px 32px;
+font-family: var(–mono);
+font-size: 10px;
+color: var(–dim);
+display: flex;
+justify-content: space-between;
+letter-spacing: 0.08em;
+}
+
+#error-msg {
+display: none;
+padding: 40px 32px;
+font-family: var(–mono);
+font-size: 12px;
+color: var(–crit-text);
+}
+
+@media (max-width: 700px) {
+header { padding: 14px 16px; }
+main   { padding: 16px 16px 40px; }
+.summary-strip { grid-template-columns: 1fr; }
+footer { flex-direction: column; gap: 4px; }
+.forecast-table { font-size: 11px; }
+.forecast-table th, .row-summary td { padding: 7px 8px; }
+.detail-grid { grid-template-columns: 1fr; }
+.detail-inner { padding: 12px 12px 16px 16px; }
+}
+</style>
+
+</head>
+<body>
+
+<header>
+  <div class="logo">Demetherm <span>/ Frost Risk Monitor</span></div>
+  <div id="status-bar">
+    <span id="status-dot" class="loading"></span>
+    <span id="status-text">Fetching forecast data…</span>
+  </div>
+</header>
+
+<div id="alert-banner"></div>
+<div id="error-msg"></div>
+
+<main>
+  <div class="summary-strip" id="summary-strip"></div>
+
+  <div class="legend">
+    <span class="legend-item">
+      <span class="legend-dot" style="background:var(--conf-hi-t)"></span>
+      Spread &lt;0.5°C — models agree
+    </span>
+    <span class="legend-item">
+      <span class="legend-dot" style="background:var(--conf-mid-t)"></span>
+      Spread 0.5–1.5°C — moderate uncertainty
+    </span>
+    <span class="legend-item">
+      <span class="legend-dot" style="background:var(--conf-lo-t)"></span>
+      Spread &gt;1.5°C — act on cold end
+    </span>
+    <span class="legend-item" style="margin-left:8px">
+      ▸ Click any row to expand model detail
+    </span>
+  </div>
+
+  <div id="sites-container"></div>
+</main>
+
+<footer>
+  <span>Data: Open-Meteo · ECMWF IFS · DWD ICON · NOAA GFS · Météo-France ARPEGE · Risk classified on cold end of ensemble</span>
+  <span id="footer-time"></span>
+</footer>
+
+<script>
+// ─────────────────────────────────────────────
+// CONFIGURATION
+// ─────────────────────────────────────────────
+const SITES = [
+  {
+    id: 'jerzmanice',
+    name: 'Winnica Jerzmanice-Zdrój',
+    shortName: 'Jerzmanice-Zdrój',
+    lat: 51.11, lon: 15.89,
+    correction: -2.5,
+    meta: '51.11°N 15.89°E · 250m asl · Valley frost pocket',
+    action: {
+      LOW:      'No action required. Continue monitoring.',
+      MODERATE: 'Alert grower. Verify generator fuel and readiness.',
+      HIGH:     'Arrange generator delivery — 48–72h lead time required. Activate cable heating system.',
+      CRITICAL: 'IMMEDIATE generator logistics required. Full system activation essential.'
+    }
+  },
+  {
+    id: 'widokowa',
+    name: 'Winnica Widokowa',
+    shortName: 'Widokowa (Kombornia)',
+    lat: 49.72, lon: 21.85,
+    correction: -0.8,
+    meta: '49.72°N 21.85°E · 470m asl · Exposed south-facing hillside',
+    action: {
+      LOW:      'No action required. Continue monitoring.',
+      MODERATE: 'Alert grower. Advection frost at 470m is less predictable than correction factor implies.',
+      HIGH:     'Arrange generator delivery — 48–72h lead time required. Exposed elevation increases advection risk.',
+      CRITICAL: 'IMMEDIATE generator logistics required. Full system activation essential.'
+    }
+  },
+  {
+    id: 'emi',
+    name: 'Winnica Emi',
+    shortName: 'Morzęcin Wielki',
+    lat: 51.328, lon: 16.899,
+    correction: -1.2,
+    meta: '51.33°N 16.90°E · 180m asl · Gentle lowland hills',
+    action: {
+      LOW:      'No action required. Continue monitoring.',
+      MODERATE: 'Alert grower. Check generator readiness.',
+      HIGH:     'Arrange generator delivery — 48–72h lead time required.',
+      CRITICAL: 'IMMEDIATE generator logistics required. Full system activation essential.'
+    }
+  }
+];
+
+const MODELS = [
+  { key: 'ecmwf_ifs025', label: 'ECMWF IFS' },
+  { key: 'icon_global',  label: 'DWD ICON'  },
+  { key: 'gfs_global',   label: 'NOAA GFS'  },
+  { key: 'arpege_world', label: 'ARPEGE'    },
+];
+
+// ─────────────────────────────────────────────
+// CLASSIFICATION
+// ─────────────────────────────────────────────
+function classifyRisk(correctedMin) {
+  if (correctedMin > 0)    return 'LOW';
+  if (correctedMin > -0.5) return 'MODERATE';
+  if (correctedMin > -1.5) return 'HIGH';
+  return 'CRITICAL';
+}
+
+function classifyFrostType(cloudPct, windMs) {
+  if (cloudPct < 30 && windMs < 2) return 'Radiation';
+  if (windMs > 3)                   return 'Advection';
+  return 'Mixed';
+}
+
+function spreadClass(spread) {
+  if (spread < 0.5) return 'tight';
+  if (spread < 1.5) return 'medium';
+  return 'wide';
+}
+
+function confidenceLabel(spread) {
+  if (spread < 0.5) return { level: 'HIGH',   text: 'Models agree — forecast reliable.' };
+  if (spread < 1.5) return { level: 'MEDIUM', text: 'Moderate uncertainty — monitor the next model run.' };
+  return             { level: 'LOW',    text: 'High uncertainty — act on the cold end of the range.' };
+}
+
+function frostTypeClass(t) {
+  return { Radiation: 'type-radiation', Advection: 'type-advection', Mixed: 'type-mixed' }[t] || '';
+}
+
+// ─────────────────────────────────────────────
+// DATA FETCH & PROCESSING
+// ─────────────────────────────────────────────
+async function fetchSite(site) {
+  const modelStr = MODELS.map(m => m.key).join(',');
+  const url = `https://api.open-meteo.com/v1/forecast`
+    + `?latitude=${site.lat}&longitude=${site.lon}`
+    + `&hourly=temperature_2m,cloudcover,windspeed_10m,dewpoint_2m`
+    + `&models=${modelStr}`
+    + `&timezone=Europe%2FWarsaw&forecast_days=7`;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} for ${site.shortName}`);
+  const data = await res.json();
+  return processEnsemble(data, site);
+}
+
+function getNightWindow(times, dayOffset) {
+  const base = new Date(times[0].substring(0, 10));
+  const nightStart = new Date(base);
+  nightStart.setDate(base.getDate() + dayOffset);
+  nightStart.setHours(22, 0, 0, 0);
+  const nightEnd = new Date(nightStart);
+  nightEnd.setDate(nightStart.getDate() + 1);
+  nightEnd.setHours(6, 0, 0, 0);
+  const indices = [];
+  times.forEach((t, i) => {
+    const dt = new Date(t);
+    if (dt >= nightStart && dt <= nightEnd) indices.push(i);
+  });
+  return { indices, nightStart, nightEnd };
+}
+
+function processEnsemble(data, site) {
+  const times = data.hourly.time;
+  const nights = [];
+
+  for (let d = 0; d < 7; d++) {
+    const { indices, nightStart, nightEnd } = getNightWindow(times, d);
+    if (!indices.length) continue;
+
+    // Per-model overnight minimums
+    const modelMins = {};
+    MODELS.forEach(m => {
+      const arr = data.hourly[`temperature_2m_${m.key}`] || data.hourly['temperature_2m'];
+      if (!arr) return;
+      const vals = indices.map(i => arr[i]).filter(v => v != null && !isNaN(v));
+      if (vals.length) modelMins[m.key] = Math.min(...vals);
+    });
+
+    const vals = Object.values(modelMins).filter(v => !isNaN(v));
+    if (!vals.length) continue;
+
+    const mean     = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const coldEnd  = Math.min(...vals);
+    const warmEnd  = Math.max(...vals);
+    const spread   = warmEnd - coldEnd;
+
+    // Conditions from ECMWF or fallback
+    const cloudArr = data.hourly[`cloudcover_${MODELS[0].key}`]    || data.hourly['cloudcover']     || [];
+    const windArr  = data.hourly[`windspeed_10m_${MODELS[0].key}`] || data.hourly['windspeed_10m']  || [];
+    const dewArr   = data.hourly[`dewpoint_2m_${MODELS[0].key}`]   || data.hourly['dewpoint_2m']    || [];
+    const tempArr  = data.hourly[`temperature_2m_${MODELS[0].key}`]|| data.hourly['temperature_2m'] || [];
+
+    let minIdx = indices[0];
+    indices.forEach(i => { if ((tempArr[i] ?? Infinity) < (tempArr[minIdx] ?? Infinity)) minIdx = i; });
+
+    const avgCloud = indices.reduce((s, i) => s + (cloudArr[i] || 0), 0) / indices.length;
+    const avgWind  = indices.reduce((s, i) => s + (windArr[i]  || 0), 0) / indices.length;
+    const windMs   = avgWind / 3.6;
+    const dewpoint = dewArr[minIdx] ?? null;
+
+    const corrMean  = mean    + site.correction;
+    const corrCold  = coldEnd + site.correction;
+    const corrWarm  = warmEnd + site.correction;
+
+    const label = nightStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+      + '–'
+      + nightEnd.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
+    nights.push({
+      label,
+      corrMean, corrCold, corrWarm, spread,
+      risk: classifyRisk(corrCold),
+      frostType: classifyFrostType(avgCloud, windMs),
+      conf: confidenceLabel(spread),
+      avgCloud: Math.round(avgCloud),
+      windMs: windMs.toFixed(1),
+      dewpoint,
+      modelMins,
+      modelCorr: Object.fromEntries(
+        Object.entries(modelMins).map(([k, v]) => [k, v + site.correction])
+      )
+    });
+  }
+  return nights;
+}
+
+// ─────────────────────────────────────────────
+// FORMATTING
+// ─────────────────────────────────────────────
+function fmt(v) {
+  if (v == null || isNaN(v)) return '—';
+  return (v >= 0 ? '+' : '') + v.toFixed(1) + '°C';
+}
+
+function tempCls(v) {
+  if (v == null || isNaN(v)) return '';
+  if (v < -1.5) return 'temp-corrected temp-negative';
+  if (v < 0)    return 'temp-corrected temp-marginal';
+  return 'temp-corrected';
+}
+
+function worstNight(nights) {
+  return nights.reduce((w, n) => n.corrCold < w.corrCold ? n : w, nights[0]);
+}
+
+// ─────────────────────────────────────────────
+// RENDER SUMMARY CARDS
+// ─────────────────────────────────────────────
+function renderSummaryCard(site, nights) {
+  const worst = worstNight(nights);
+  const sc    = spreadClass(worst.spread);
+  const card  = document.createElement('div');
+  card.className = `summary-card card-${worst.risk}`;
+  card.innerHTML = `
+    <div class="site-name">${site.shortName}</div>
+    <div class="worst-night ${tempCls(worst.corrCold)}">${fmt(worst.corrCold)}</div>
+    <div class="worst-label">cold-end corrected min · ${worst.label}</div>
+    <div class="spread-note">
+      mean ${fmt(worst.corrMean)} &nbsp;·&nbsp;
+      spread <span class="spread-pill spread-${sc}">±${(worst.spread / 2).toFixed(1)}°C</span>
+    </div>
+    <div class="risk-badge risk-${worst.risk}">${worst.risk}</div>
+  `;
+  setTimeout(() => card.classList.add('visible'), 50);
+  return card;
+}
+
+// ─────────────────────────────────────────────
+// RENDER SITE SECTION
+// ─────────────────────────────────────────────
+function renderSiteSection(site, nights) {
+  const worst = worstNight(nights);
+  const section = document.createElement('div');
+  section.className = 'site-section';
+
+  const rowsHTML = nights.map((n, idx) => {
+    const sc = spreadClass(n.spread);
+
+    // Find coldest and warmest model keys
+    const mVals = Object.entries(n.modelMins).filter(([, v]) => !isNaN(v));
+    const coldestKey = mVals.reduce((a, b) => b[1] < a[1] ? b : a, mVals[0])?.[0];
+    const warmestKey = mVals.reduce((a, b) => b[1] > a[1] ? b : a, mVals[0])?.[0];
+
+    const modelRows = MODELS.map(m => {
+      const raw  = n.modelMins[m.key];
+      const corr = n.modelCorr[m.key];
+      const isColdest = m.key === coldestKey;
+      const isWarmest = m.key === warmestKey && coldestKey !== warmestKey;
+      const rowCls = isColdest ? 'model-coldest' : isWarmest ? 'model-warmest' : '';
+      const marker = isColdest ? ' ▴cold' : isWarmest ? ' ▾warm' : '';
+      return `<tr>
+        <td class="${rowCls}">${m.label}${marker}</td>
+        <td class="${rowCls}">${fmt(raw)}</td>
+        <td class="${tempCls(corr)}">${fmt(corr)}</td>
+      </tr>`;
+    }).join('');
+
+    const confIcon = { HIGH: '✓', MEDIUM: '△', LOW: '⚠' }[n.conf.level];
+
+    const summaryRow = `
+      <tr class="row-summary" data-idx="${idx}" data-site="${site.id}">
+        <td><span class="expand-icon">▶</span>${n.label}</td>
+        <td class="${tempCls(n.corrMean)}">${fmt(n.corrMean)}</td>
+        <td class="${tempCls(n.corrCold)}">${fmt(n.corrCold)}</td>
+        <td><span class="spread-pill spread-${sc}">±${(n.spread / 2).toFixed(1)}°C</span></td>
+        <td class="${frostTypeClass(n.frostType)}">${n.frostType}</td>
+        <td><span class="risk-cell risk-${n.risk}">${n.risk}</span></td>
+      </tr>`;
+
+    const detailRow = `
+      <tr class="row-detail" data-detail="${idx}-${site.id}">
+        <td colspan="6">
+          <div class="detail-inner">
+            <div class="detail-grid">
+              <div>
+                <div class="detail-section-title">Model breakdown</div>
+                <table class="model-table">
+                  <thead><tr>
+                    <th>Model</th><th>Fcst min</th><th>Corrected</th>
+                  </tr></thead>
+                  <tbody>${modelRows}</tbody>
+                </table>
+                <div class="confidence-block conf-${n.conf.level}">
+                  ${confIcon} ${n.conf.text}
+                </div>
+              </div>
+              <div>
+                <div class="detail-section-title">Night conditions (ECMWF)</div>
+                <div class="conditions-list">
+                  <div class="cond-row">
+                    <span class="cond-label">Cloud cover</span>
+                    <span class="cond-value">${n.avgCloud}%</span>
+                  </div>
+                  <div class="cond-row">
+                    <span class="cond-label">Wind speed</span>
+                    <span class="cond-value">${n.windMs} m/s</span>
+                  </div>
+                  <div class="cond-row">
+                    <span class="cond-label">Dewpoint</span>
+                    <span class="cond-value">${fmt(n.dewpoint)}</span>
+                  </div>
+                  <div class="cond-row">
+                    <span class="cond-label">Frost type</span>
+                    <span class="cond-value ${frostTypeClass(n.frostType)}">${n.frostType}</span>
+                  </div>
+                  <div class="cond-row">
+                    <span class="cond-label">Correction applied</span>
+                    <span class="cond-value">${site.correction > 0 ? '+' : ''}${site.correction}°C</span>
+                  </div>
+                  <div class="cond-row">
+                    <span class="cond-label">Ensemble range</span>
+                    <span class="cond-value">${fmt(n.corrCold)} → ${fmt(n.corrWarm)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>`;
+
+    return summaryRow + detailRow;
+  }).join('');
+
+  section.innerHTML = `
+    <div class="site-header">
+      <h2>${site.name}</h2>
+      <span class="site-meta">${site.meta} · correction ${site.correction > 0 ? '+' : ''}${site.correction}°C</span>
+    </div>
+    <table class="forecast-table">
+      <thead>
+        <tr>
+          <th>Night</th>
+          <th>Mean corr.</th>
+          <th>Cold end ▾</th>
+          <th>Spread</th>
+          <th>Type</th>
+          <th>Risk</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHTML}</tbody>
+    </table>
+    <div class="action-box">▸ ${site.action[worst.risk]}</div>
+  `;
+
+  // Wire expand/collapse
+  section.querySelectorAll('.row-summary').forEach(row => {
+    row.addEventListener('click', () => {
+      const detail = section.querySelector(`[data-detail="${row.dataset.idx}-${site.id}"]`);
+      const opening = !detail.classList.contains('open');
+      detail.classList.toggle('open', opening);
+      row.classList.toggle('expanded', opening);
+    });
+  });
+
+  setTimeout(() => section.classList.add('visible'), 100);
+  return section;
+}
+
+// ─────────────────────────────────────────────
+// ALERT BANNER
+// ─────────────────────────────────────────────
+function renderAlertBanner(allResults) {
+  const banner = document.getElementById('alert-banner');
+  const urgent = [];
+  allResults.forEach(({ site, nights }) => {
+    nights.slice(0, 3).forEach(n => {
+      if (n.risk === 'HIGH' || n.risk === 'CRITICAL') {
+        urgent.push(`${site.shortName} · ${n.label} · ${n.risk} (cold end ${fmt(n.corrCold)})`);
+      }
+    });
+  });
+  if (urgent.length) {
+    banner.style.display = 'block';
+    banner.classList.toggle('critical', urgent.some(u => u.includes('CRITICAL')));
+    banner.innerHTML = `⚠ GENERATOR ACTION REQUIRED WITHIN 72H<br>${urgent.join('<br>')}`;
+  }
+}
+
+// ─────────────────────────────────────────────
+// MAIN
+// ─────────────────────────────────────────────
+async function main() {
+  const dot        = document.getElementById('status-dot');
+  const statusTxt  = document.getElementById('status-text');
+  const strip      = document.getElementById('summary-strip');
+  const container  = document.getElementById('sites-container');
+  const footerTime = document.getElementById('footer-time');
+
+  dot.className = 'loading';
+
+  footerTime.textContent = 'Generated ' + new Date().toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+  });
+
+  try {
+    const allResults = [];
+
+    for (const site of SITES) {
+      statusTxt.textContent = `Fetching ${site.shortName}…`;
+      const nights = await fetchSite(site);
+      allResults.push({ site, nights });
+      strip.appendChild(renderSummaryCard(site, nights));
+      container.appendChild(renderSiteSection(site, nights));
+    }
+
+    renderAlertBanner(allResults);
+    dot.className = 'ok';
+    statusTxt.textContent = 'Live · ECMWF · ICON · GFS · ARPEGE';
+
+  } catch (err) {
+    dot.className = 'error';
+    statusTxt.textContent = 'Fetch failed';
+    const errDiv = document.getElementById('error-msg');
+    errDiv.style.display = 'block';
+    errDiv.textContent = `Failed to load forecast data: ${err.message}. Check network or try again.`;
+    console.error(err);
+  }
+}
+
+main();
+</script>
+
+</body>
+</html>
