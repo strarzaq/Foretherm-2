@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Demetherm — Frost Risk Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#0a0c0f; --surface:#111418; --surface2:#0d1014;
+    --border:#1e2328; --border2:#2a3040;
+    --text:#c8d0dc; --dim:#5a6475; --accent:#4a9eff;
+    --low:#1a3a2a; --low-t:#3ddc84;
+    --mod:#3a2e10; --mod-t:#f5c542;
+    --high:#3a1a10; --high-t:#ff7043;
+    --crit:#3a0a0a; --crit-t:#ff1744;
+    --ch:#1a3a2a; --ch-t:#3ddc84;
+    --cm:#3a2e10; --cm-t:#f5c542;
+    --cl:#3a1a10; --cl-t:#ff7043;
+    --mono:'Space Mono',monospace; --sans:'DM Sans',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.6;min-height:100vh}
+
+  header{border-bottom:1px solid var(--border);padding:18px 32px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg);z-index:100;gap:12px;flex-wrap:wrap}
+  .logo{font-family:var(--mono);font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent)}
+  .logo span{color:var(--dim)}
+  .hdr-right{display:flex;align-items:center;gap:8px}
+  #status-bar{font-family:var(--mono);font-size:11px;color:var(--dim);display:flex;align-items:center;gap:8px}
+  #sdot{width:7px;height:7px;border-radius:50%;background:var(--dim);display:inline-block;transition:background .4s}
+  #sdot.loading{background:var(--mod-t);animation:pulse 1s infinite}
+  #sdot.ok{background:var(--low-t)} #sdot.error{background:var(--crit-t)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+  #alert-banner{display:none;margin:16px 32px 0;padding:14px 20px;border-left:3px solid var(--high-t);background:var(--high);font-family:var(--mono);font-size:12px;color:var(--high-t);letter-spacing:.05em;animation:slideIn .4s ease}
+  #alert-banner.critical{border-color:var(--crit-t);background:var(--crit);color:var(--crit-t)}
+  @keyframes slideIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+
+  main{padding:24px 32px 56px}
+
+  .summary-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:28px}
+  .scard{border:1px solid var(--border);border-top:2px solid var(--border);background:var(--surface);padding:16px 20px;opacity:0;transform:translateY(12px);transition:opacity .4s,transform .4s}
+  .scard.vis{opacity:1;transform:none}
+  .scard .sname{font-family:var(--mono);font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--dim);margin-bottom:8px}
+  .scard .wtemp{font-family:var(--mono);font-size:22px;font-weight:700;line-height:1;margin-bottom:4px}
+  .scard .wlbl{font-size:11px;color:var(--dim)}
+  .scard .wspread{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:4px}
+  .scard .rbadge{display:inline-block;margin-top:10px;padding:3px 10px;font-family:var(--mono);font-size:10px;letter-spacing:.15em;font-weight:700}
+  .scard .dgnote{display:block;font-family:var(--mono);font-size:9px;color:var(--dim);margin-top:5px}
+
+  .legend{display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap;align-items:center}
+  .leg{font-family:var(--mono);font-size:10px;color:var(--dim);display:flex;align-items:center;gap:6px}
+  .ldot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+  .ssec{margin-bottom:40px;opacity:0;transform:translateY(16px);transition:opacity .5s,transform .5s}
+  .ssec.vis{opacity:1;transform:none}
+  .shdr{display:flex;align-items:baseline;gap:14px;padding-bottom:10px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .shdr h2{font-family:var(--mono);font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--text);font-weight:700}
+  .smeta{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.05em}
+
+  .ftbl{width:100%;border-collapse:collapse;margin-top:12px;font-family:var(--mono);font-size:12px}
+  .ftbl th{text-align:left;padding:6px 12px;color:var(--dim);font-size:10px;letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid var(--border);font-weight:400}
+  .rsum td{padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;transition:background .15s}
+  .rsum:hover td{background:rgba(255,255,255,.025)}
+  .rsum.exp td{background:rgba(74,158,255,.05);border-bottom-color:transparent}
+  .xico{display:inline-block;font-size:9px;color:var(--dim);transition:transform .22s ease;margin-right:7px;vertical-align:middle}
+  .rsum.exp .xico{transform:rotate(90deg);color:var(--accent)}
+  .rdet{display:none} .rdet.open{display:table-row}
+  .rdet>td{padding:0;border-bottom:1px solid var(--border);background:var(--surface2)}
+  .dinn{padding:16px 20px 20px 32px}
+  .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px 40px}
+  .dsec{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);margin-bottom:8px;font-family:var(--mono)}
+  .mtbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px}
+  .mtbl th{text-align:left;padding:3px 10px;color:var(--dim);font-size:9px;letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid var(--border);font-weight:400}
+  .mtbl td{padding:5px 10px;border-bottom:1px solid var(--border)}
+  .mtbl tr:last-child td{border-bottom:none}
+  .mcold{color:var(--high-t)} .mwarm{color:var(--low-t)}
+  .confblk{margin-top:10px;padding:8px 12px;font-family:var(--mono);font-size:11px;border-left:2px solid}
+  .cH{border-color:var(--ch-t);background:var(--ch);color:var(--ch-t)}
+  .cM{border-color:var(--cm-t);background:var(--cm);color:var(--cm-t)}
+  .cL{border-color:var(--cl-t);background:var(--cl);color:var(--cl-t)}
+  .dgblk{margin-top:8px;padding:7px 12px;font-family:var(--mono);font-size:10px;color:var(--dim);border-left:2px solid var(--border2)}
+  .clist{font-family:var(--mono);font-size:11px;display:flex;flex-direction:column;gap:6px}
+  .crow{display:flex;justify-content:space-between;gap:16px}
+  .clbl{color:var(--dim)} .cval{color:var(--text)}
+
+  .rc{font-weight:700;font-size:10px;letter-spacing:.12em;padding:3px 8px;display:inline-block}
+  .rc.LOW,.riskLOW{background:var(--low);color:var(--low-t)}
+  .rc.MODERATE,.riskMODERATE{background:var(--mod);color:var(--mod-t)}
+  .rc.HIGH,.riskHIGH{background:var(--high);color:var(--high-t)}
+  .rc.CRITICAL,.riskCRITICAL{background:var(--crit);color:var(--crit-t)}
+  .cardLOW{border-top-color:var(--low-t)!important}
+  .cardMODERATE{border-top-color:var(--mod-t)!important}
+  .cardHIGH{border-top-color:var(--high-t)!important}
+  .cardCRITICAL{border-top-color:var(--crit-t)!important}
+  .spill{display:inline-block;padding:2px 7px;font-size:10px;border-radius:2px;font-family:var(--mono)}
+  .tight{background:var(--ch);color:var(--ch-t)} .medium{background:var(--cm);color:var(--cm-t)} .wide{background:var(--cl);color:var(--cl-t)}
+  .tc{color:#fff;font-weight:700} .tn{color:var(--high-t)!important} .tm{color:var(--mod-t)!important}
+  .trad{color:#7cb9ff} .tadv{color:#ffb347} .tmix{color:#a0a8b8}
+  .abox{margin-top:10px;padding:10px 14px;border-left:2px solid var(--border2);font-size:12px;color:var(--dim)}
+
+  .btn{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:7px 16px;border:1px solid var(--border2);background:var(--surface);color:var(--text);cursor:pointer;transition:border-color .15s,color .15s}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .bta{border-color:var(--accent);color:var(--accent)} .bta:hover{background:rgba(74,158,255,.1)}
+  .bts{padding:4px 10px;font-size:10px}
+
+  /* Settings dialog */
+  .dov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:200;align-items:center;justify-content:center}
+  .dov.open{display:flex}
+  .dbox{background:var(--surface);border:1px solid var(--border2);padding:28px 32px;min-width:340px;max-width:540px;width:92%}
+  .dtitle{font-family:var(--mono);font-size:12px;letter-spacing:.15em;text-transform:uppercase;color:var(--accent);margin-bottom:16px}
+  .dbody{margin-bottom:20px}
+  .dbody p{font-size:12px;color:var(--dim);margin-bottom:12px;line-height:1.7}
+  .osep{font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);padding:10px 0 6px;border-bottom:1px solid var(--border);margin-bottom:8px;margin-top:4px}
+  .orows{display:flex;flex-direction:column;gap:8px;margin-bottom:4px}
+  .orow{display:grid;grid-template-columns:1fr 110px;gap:12px;align-items:center}
+  .orow label{font-family:var(--mono);font-size:11px;color:var(--text)}
+  .orow input{font-family:var(--mono);font-size:12px;padding:6px 10px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);outline:none;text-align:right;width:100%}
+  .orow input:focus{border-color:var(--accent)}
+  .dact{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+
+  footer{border-top:1px solid var(--border);padding:14px 32px;font-family:var(--mono);font-size:10px;color:var(--dim);display:flex;justify-content:space-between;letter-spacing:.08em}
+  #errmsg{display:none;padding:32px;font-family:var(--mono);font-size:12px;color:var(--crit-t)}
+
+  @media(max-width:700px){
+    header{padding:12px 16px} main{padding:14px 14px 40px}
+    .summary-strip{grid-template-columns:1fr} footer{flex-direction:column;gap:4px}
+    .ftbl{font-size:11px} .ftbl th,.rsum td{padding:7px 8px}
+    .dgrid{grid-template-columns:1fr} .dinn{padding:12px 12px 16px 16px}
+    .orow{grid-template-columns:1fr 90px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Demetherm <span>/ Frost Risk Monitor</span></div>
+  <div class="hdr-right">
+    <div id="status-bar"><span id="sdot" class="loading"></span><span id="stxt">Loading&hellip;</span></div>
+    <button class="btn bts" onclick="openSettings()">&#9881; Settings</button>
+  </div>
+</header>
+
+<div id="alert-banner"></div>
+<div id="errmsg"></div>
+
+<main>
+  <div class="summary-strip" id="sstrip"></div>
+  <div class="legend">
+    <span class="leg"><span class="ldot" style="background:#3ddc84"></span>Spread &lt;1&deg;C &mdash; full risk</span>
+    <span class="leg"><span class="ldot" style="background:#f5c542"></span>Spread 1&ndash;2&deg;C &mdash; down one level</span>
+    <span class="leg"><span class="ldot" style="background:#ff7043"></span>Spread &gt;2&deg;C &mdash; down two levels</span>
+    <span class="leg" style="margin-left:8px">&#9658; Click row to expand</span>
+  </div>
+  <div id="scont"></div>
+</main>
+
+<footer>
+  <span>Open-Meteo &middot; ECMWF IFS &middot; DWD ICON &middot; NOAA GFS &middot; ARPEGE &middot; Risk on corrected mean, spread-adjusted</span>
+  <span id="ftime"></span>
+</footer>
+
+<!-- Settings dialog -->
+<div class="dov" id="sdlg">
+  <div class="dbox">
+    <div class="dtitle">&#9881; Site Settings</div>
+    <div class="dbody">
+      <p>Temperature corrections and height offsets are set manually based on field calibration. Changes are saved in the browser and persist across sessions.</p>
+
+      <div class="osep">Temperature correction (&deg;C) &mdash; applied to forecast model output</div>
+      <p style="font-size:11px;margin-bottom:8px">Negative = site colder than regional model. Agreed values: Jerzmanice &minus;2.5, Widokowa &minus;0.8, Emi &minus;2.0.</p>
+      <div class="orows" id="corr-rows"></div>
+
+      <div class="osep">Height offset (metres) &mdash; station to cable/cordon level</div>
+      <p style="font-size:11px;margin-bottom:8px">Vertical drop from weather station to cable position. Applied as 0.15&deg;C/m lapse to forecast only. Jerzmanice &minus;10m, others 0.</p>
+      <div class="orows" id="offset-rows"></div>
+    </div>
+    <div class="dact">
+      <button class="btn" onclick="closeDlg()">Cancel</button>
+      <button class="btn bta" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── SITE DEFAULTS ──────────────────────────────────────────────────────────
+var SITES = [
+  { id:'jerzmanice', name:'Winnica Jerzmanice-Zdr\u00f3j', short:'Jerzmanice-Zdr\u00f3j',
+    lat:51.11, lon:15.89, defCorr:-2.5, defOffset:-10,
+    meta:'51.11\u00b0N 15.89\u00b0E \u00b7 250m asl \u00b7 Valley frost pocket',
+    action:{ LOW:'No action required. Continue monitoring.',
+      MODERATE:'Alert grower. Verify generator fuel and readiness.',
+      HIGH:'Arrange generator delivery \u2014 48\u201372h lead time. Activate cable heating.',
+      CRITICAL:'IMMEDIATE generator logistics required. Full system activation essential.' }},
+  { id:'widokowa', name:'Winnica Widokowa', short:'Widokowa (Kombornia)',
+    lat:49.72, lon:21.85, defCorr:-0.8, defOffset:0,
+    meta:'49.72\u00b0N 21.85\u00b0E \u00b7 470m asl \u00b7 Exposed south-facing hillside',
+    action:{ LOW:'No action required. Continue monitoring.',
+      MODERATE:'Alert grower. Advection frost at 470m is less predictable than correction implies.',
+      HIGH:'Arrange generator delivery \u2014 48\u201372h lead time. Exposed elevation increases advection risk.',
+      CRITICAL:'IMMEDIATE generator logistics required. Full system activation essential.' }},
+  { id:'emi', name:'Winnica Emi', short:'Morz\u0119cin Wielki',
+    lat:51.328, lon:16.899, defCorr:-2.0, defOffset:0,
+    meta:'51.33\u00b0N 16.90\u00b0E \u00b7 180m asl \u00b7 Gentle lowland hills',
+    action:{ LOW:'No action required. Continue monitoring.',
+      MODERATE:'Alert grower. Check generator readiness.',
+      HIGH:'Arrange generator delivery \u2014 48\u201372h lead time.',
+      CRITICAL:'IMMEDIATE generator logistics required. Full system activation essential.' }}
+];
+
+var MODELS = [
+  {key:'ecmwf_ifs025', label:'ECMWF IFS'},
+  {key:'icon_global',  label:'DWD ICON'},
+  {key:'gfs_global',   label:'NOAA GFS'},
+  {key:'arpege_world', label:'ARPEGE'}
+];
+
+var RISK_LEVELS = ['LOW','MODERATE','HIGH','CRITICAL'];
+
+// ── SETTINGS (localStorage) ────────────────────────────────────────────────
+function getLSJson(key, def) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null') || def; } catch(e) { return def; }
+}
+function setLSJson(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+
+function getCorrections() {
+  var s = getLSJson('dm_corrections', {});
+  var o = {};
+  SITES.forEach(function(s2){ o[s2.id] = s[s2.id] != null ? s[s2.id] : s2.defCorr; });
+  return o;
+}
+function getOffsets() {
+  var s = getLSJson('dm_offsets', {});
+  var o = {};
+  SITES.forEach(function(s2){ o[s2.id] = s[s2.id] != null ? s[s2.id] : s2.defOffset; });
+  return o;
+}
+
+// ── CLASSIFICATION ─────────────────────────────────────────────────────────
+function baseRisk(t) {
+  if(t > 0)    return 'LOW';
+  if(t > -0.5) return 'MODERATE';
+  if(t > -1.5) return 'HIGH';
+  return 'CRITICAL';
+}
+function dgSteps(spread) { return spread < 1 ? 0 : spread < 2 ? 1 : 2; }
+function adjRisk(mean, spread) {
+  return RISK_LEVELS[Math.max(0, RISK_LEVELS.indexOf(baseRisk(mean)) - dgSteps(spread))];
+}
+function dgLabel(spread) {
+  if(spread < 1) return null;
+  return 'Spread ' + spread.toFixed(1) + '\u00b0C \u2014 downgraded ' + (spread < 2 ? 'one' : 'two') + ' level' + (spread < 2 ? '' : 's');
+}
+function spreadCls(s) { return s < 1 ? 'tight' : s < 2 ? 'medium' : 'wide'; }
+function confLabel(s) {
+  if(s < 1) return {lv:'H', txt:'Models agree \u2014 risk reliable.'};
+  if(s < 2) return {lv:'M', txt:'Moderate spread \u2014 risk downgraded one level.'};
+  return          {lv:'L', txt:'Wide spread \u2014 risk downgraded two levels.'};
+}
+function ftClass(t) { return {Radiation:'trad',Advection:'tadv',Mixed:'tmix'}[t] || ''; }
+function frostType(cloud, wms) {
+  if(cloud < 30 && wms < 2) return 'Radiation';
+  if(wms > 3) return 'Advection';
+  return 'Mixed';
+}
+
+// ── FORMATTING ─────────────────────────────────────────────────────────────
+function fmt(v) {
+  if(v == null || isNaN(v)) return '\u2014';
+  return (v >= 0 ? '+' : '') + v.toFixed(1) + '\u00b0C';
+}
+function tempCls(v) {
+  if(v == null || isNaN(v)) return '';
+  if(v < -1.5) return 'tc tn';
+  if(v < 0)    return 'tc tm';
+  return 'tc';
+}
+function ldate(d) {
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+}
+function pad(n) { return String(n).padStart(2, '0'); }
+function worstNight(nights) {
+  return nights.reduce(function(w, n) {
+    var wi = RISK_LEVELS.indexOf(w.riskAdj), ni = RISK_LEVELS.indexOf(n.riskAdj);
+    if(ni !== wi) return ni > wi ? n : w;
+    return n.corrMean < w.corrMean ? n : w;
+  }, nights[0]);
+}
+
+// ── DATA FETCH & PROCESSING ────────────────────────────────────────────────
+async function fetchForecast(site, corr, offset) {
+  var modelStr = MODELS.map(function(m){ return m.key; }).join(',');
+  var url = 'https://api.open-meteo.com/v1/forecast'
+    + '?latitude='  + site.lat + '&longitude=' + site.lon
+    + '&hourly=temperature_2m,cloudcover,windspeed_10m,dewpoint_2m'
+    + '&models=' + modelStr + '&timezone=Europe%2FWarsaw&forecast_days=7';
+  var res = await fetch(url);
+  if(!res.ok) throw new Error('HTTP ' + res.status + ' for ' + site.short);
+  return processEnsemble(await res.json(), site, corr, offset);
+}
+
+function processEnsemble(data, site, corr, offset) {
+  var times = data.hourly.time;
+  // Height lapse applied to forecast (not to observed measurements)
+  var lapse  = offset * 0.15;
+  var totalCorr = corr + lapse;
+  var nights = [];
+  var firstDate = times[0].substring(0, 10);
+
+  for(var d = 0; d < 7; d++) {
+    var parts = firstDate.split('-');
+    var base  = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2])+d);
+    var ds    = ldate(base);
+    var nextDay = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2])+d+1);
+    var ns    = ds + 'T22:00';
+    var ne    = ldate(nextDay) + 'T06:00';
+
+    var idx = [];
+    times.forEach(function(t, i){ if(t >= ns && t <= ne) idx.push(i); });
+    if(!idx.length) continue;
+
+    // Per-model minimums
+    var modelMins = {};
+    MODELS.forEach(function(m) {
+      var arr = data.hourly['temperature_2m_' + m.key] || data.hourly['temperature_2m'];
+      if(!arr) return;
+      var vals = idx.map(function(i){ return arr[i]; }).filter(function(v){ return v != null && !isNaN(v); });
+      if(vals.length) modelMins[m.key] = Math.min.apply(null, vals);
+    });
+
+    var vals = Object.keys(modelMins).map(function(k){ return modelMins[k]; }).filter(function(v){ return !isNaN(v); });
+    if(!vals.length) continue;
+
+    var mean  = vals.reduce(function(a,b){ return a+b; }, 0) / vals.length;
+    var cold  = Math.min.apply(null, vals);
+    var warm  = Math.max.apply(null, vals);
+    var spread = warm - cold;
+
+    // Conditions from ECMWF
+    var pk = MODELS[0].key;
+    var cloudArr = data.hourly['cloudcover_'    + pk] || data.hourly['cloudcover']    || [];
+    var windArr  = data.hourly['windspeed_10m_' + pk] || data.hourly['windspeed_10m'] || [];
+    var dewArr   = data.hourly['dewpoint_2m_'   + pk] || data.hourly['dewpoint_2m']   || [];
+    var tArr     = data.hourly['temperature_2m_'+ pk] || data.hourly['temperature_2m']|| [];
+
+    var mi = idx[0];
+    idx.forEach(function(i){ if((tArr[i]!=null?tArr[i]:Infinity) < (tArr[mi]!=null?tArr[mi]:Infinity)) mi=i; });
+
+    var avgCloud = idx.reduce(function(s,i){ return s+(cloudArr[i]||0); }, 0) / idx.length;
+    var avgWind  = idx.reduce(function(s,i){ return s+(windArr[i]||0);  }, 0) / idx.length;
+    var windMs   = avgWind / 3.6;
+
+    var corrMean = mean + totalCorr;
+    var corrCold = cold + totalCorr;
+    var corrWarm = warm + totalCorr;
+    var modelCorr = {};
+    Object.keys(modelMins).forEach(function(k){ modelCorr[k] = modelMins[k] + totalCorr; });
+
+    nights.push({
+      dateStr:  ds,
+      label:    base.toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'})
+                + '\u2013'
+                + nextDay.toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'}),
+      corrMean: corrMean, corrCold: corrCold, corrWarm: corrWarm,
+      spread:   spread,
+      risk:     baseRisk(corrMean), riskAdj: adjRisk(corrMean, spread),
+      dgl:      dgLabel(spread), conf: confLabel(spread),
+      ftype:    frostType(avgCloud, windMs),
+      cloud:    Math.round(avgCloud), windMs: windMs.toFixed(1),
+      dew:      dewArr[mi] != null ? dewArr[mi] : null,
+      modelMins: modelMins, modelCorr: modelCorr,
+      corr: corr, lapse: lapse, totalCorr: totalCorr, offset: offset
+    });
+  }
+  return nights;
+}
+
+// ── RENDER SUMMARY CARDS ───────────────────────────────────────────────────
+function renderCard(site, nights) {
+  var w = worstNight(nights), sc = spreadCls(w.spread);
+  var card = document.createElement('div');
+  card.className = 'scard card' + w.riskAdj;
+  card.innerHTML =
+    '<div class="sname">' + site.short + '</div>' +
+    '<div class="wtemp ' + tempCls(w.corrMean) + '">' + fmt(w.corrMean) + '</div>' +
+    '<div class="wlbl">corrected mean \u00b7 ' + w.label + '</div>' +
+    '<div class="wspread">spread <span class="spill ' + sc + '">\u00b1' + (w.spread/2).toFixed(1) + '&deg;C</span>' +
+    ' \u00b7 ' + fmt(w.corrCold) + ' \u2192 ' + fmt(w.corrWarm) + '</div>' +
+    '<div class="rbadge rc ' + w.riskAdj + '">' + w.riskAdj + '</div>' +
+    (w.dgl ? '<span class="dgnote">\u2193 ' + w.dgl + '</span>' : '');
+  setTimeout(function(){ card.classList.add('vis'); }, 50);
+  return card;
+}
+
+// ── RENDER SITE SECTION ────────────────────────────────────────────────────
+function renderSite(site, nights) {
+  var worst   = worstNight(nights);
+  var section = document.createElement('div');
+  section.className = 'ssec';
+
+  var rows = nights.map(function(n, idx) {
+    var sc = spreadCls(n.spread);
+    var me = Object.keys(n.modelMins).map(function(k){ return [k, n.modelMins[k]]; }).filter(function(e){ return !isNaN(e[1]); });
+    var ck = me.reduce(function(a,b){ return b[1]<a[1]?b:a; }, me[0])[0];
+    var wk = me.reduce(function(a,b){ return b[1]>a[1]?b:a; }, me[0])[0];
+
+    var mrows = MODELS.map(function(m) {
+      var r = n.modelMins[m.key], c = n.modelCorr[m.key];
+      var ic = m.key===ck, iw = m.key===wk && ck!==wk;
+      var cls = ic?'mcold':iw?'mwarm':'', mk = ic?' \u25b4cold':iw?' \u25bewarm':'';
+      return '<tr><td class="'+cls+'">'+m.label+mk+'</td><td class="'+cls+'">'+fmt(r)+'</td><td class="'+tempCls(c)+'">'+fmt(c)+'</td></tr>';
+    }).join('');
+
+    var ci = {H:'\u2713', M:'\u25b3', L:'\u26a0'};
+    var dgblk = n.dgl ? '<div class="dgblk">\u2193 '+n.dgl+(n.risk!==n.riskAdj?' ('+n.risk+' \u2192 '+n.riskAdj+')':'')+'</div>' : '';
+
+    var sr = '<tr class="rsum" data-idx="'+idx+'" data-site="'+site.id+'">' +
+      '<td><span class="xico">&#9658;</span>'+n.label+'</td>' +
+      '<td class="'+tempCls(n.corrMean)+'">'+fmt(n.corrMean)+'</td>' +
+      '<td><span class="spill '+sc+'">\u00b1'+(n.spread/2).toFixed(1)+'&deg;C</span></td>' +
+      '<td class="'+ftClass(n.ftype)+'">'+n.ftype+'</td>' +
+      '<td><span class="rc '+n.riskAdj+'">'+n.riskAdj+'</span></td>' +
+      '</tr>';
+
+    var dr = '<tr class="rdet" data-det="'+idx+'-'+site.id+'">' +
+      '<td colspan="5"><div class="dinn"><div class="dgrid">' +
+      '<div><div class="dsec">Model breakdown</div>' +
+      '<table class="mtbl"><thead><tr><th>Model</th><th>Raw min</th><th>Corrected</th></tr></thead><tbody>'+mrows+'</tbody></table>' +
+      '<div class="confblk c'+n.conf.lv+'">'+ci[n.conf.lv]+' '+n.conf.txt+'</div>' +
+      dgblk+'</div>' +
+      '<div><div class="dsec">Conditions &amp; corrections</div>' +
+      '<div class="clist">' +
+      '<div class="crow"><span class="clbl">Corrected mean</span><span class="cval '+tempCls(n.corrMean)+'">'+fmt(n.corrMean)+'</span></div>' +
+      '<div class="crow"><span class="clbl">Ensemble range</span><span class="cval">'+fmt(n.corrCold)+' \u2192 '+fmt(n.corrWarm)+'</span></div>' +
+      '<div class="crow"><span class="clbl">Raw / adjusted risk</span><span class="cval">'+n.risk+' \u2192 <span class="rc '+n.riskAdj+'">'+n.riskAdj+'</span></span></div>' +
+      '<div class="crow"><span class="clbl">Site correction</span><span class="cval">'+(n.corr>=0?'+':'')+n.corr+'\u00b0C</span></div>' +
+      (n.offset !== 0 ? '<div class="crow"><span class="clbl">Height lapse ('+n.offset+'m)</span><span class="cval">'+(n.lapse>=0?'+':'')+n.lapse.toFixed(2)+'\u00b0C</span></div>' : '') +
+      '<div class="crow"><span class="clbl">Total correction</span><span class="cval">'+(n.totalCorr>=0?'+':'')+n.totalCorr.toFixed(2)+'\u00b0C</span></div>' +
+      '<div class="crow"><span class="clbl">Cloud</span><span class="cval">'+n.cloud+'%</span></div>' +
+      '<div class="crow"><span class="clbl">Wind</span><span class="cval">'+n.windMs+' m/s</span></div>' +
+      '<div class="crow"><span class="clbl">Dewpoint</span><span class="cval">'+fmt(n.dew)+'</span></div>' +
+      '<div class="crow"><span class="clbl">Frost type</span><span class="cval '+ftClass(n.ftype)+'">'+n.ftype+'</span></div>' +
+      '</div></div></div></div></td></tr>';
+
+    return sr + dr;
+  }).join('');
+
+  var corr = nights[0].corr, offset = nights[0].offset;
+  var metaExtra = ' \u00b7 correction ' + (corr>=0?'+':'') + corr + '\u00b0C'
+    + (offset !== 0 ? ' \u00b7 height ' + (offset>0?'+':'') + offset + 'm' : '');
+
+  section.innerHTML =
+    '<div class="shdr"><h2>'+site.name+'</h2>' +
+    '<span class="smeta">'+site.meta+metaExtra+'</span></div>' +
+    '<table class="ftbl"><thead><tr>' +
+    '<th>Night</th><th>Mean corr.</th><th>Spread</th><th>Type</th><th>Risk (adj.)</th>' +
+    '</tr></thead><tbody>'+rows+'</tbody></table>' +
+    '<div class="abox">&#9658; '+site.action[worst.riskAdj]+'</div>';
+
+  section.querySelectorAll('.rsum').forEach(function(row) {
+    row.addEventListener('click', function() {
+      var det = section.querySelector('[data-det="'+row.dataset.idx+'-'+site.id+'"]');
+      var op  = !det.classList.contains('open');
+      det.classList.toggle('open', op);
+      row.classList.toggle('exp', op);
+    });
+  });
+
+  setTimeout(function(){ section.classList.add('vis'); }, 100);
+  return section;
+}
+
+// ── ALERT BANNER ───────────────────────────────────────────────────────────
+function renderAlert(results) {
+  var banner = document.getElementById('alert-banner'), urgent = [];
+  results.forEach(function(r) {
+    r.nights.slice(0, 3).forEach(function(n) {
+      if(n.riskAdj === 'HIGH' || n.riskAdj === 'CRITICAL')
+        urgent.push(r.site.short + ' \u00b7 ' + n.label + ' \u00b7 ' + n.riskAdj
+          + ' (' + fmt(n.corrMean) + (n.dgl ? ', spread \u00b1'+(n.spread/2).toFixed(1)+'\u00b0C' : '') + ')');
+    });
+  });
+  if(urgent.length) {
+    banner.style.display = 'block';
+    banner.classList.toggle('critical', urgent.some(function(u){ return u.indexOf('CRITICAL') >= 0; }));
+    banner.innerHTML = '\u26a0 GENERATOR ACTION REQUIRED WITHIN 72H<br>' + urgent.join('<br>');
+  }
+}
+
+// ── SETTINGS DIALOG ────────────────────────────────────────────────────────
+function openSettings() {
+  var corrs   = getCorrections();
+  var offsets = getOffsets();
+  var cr = document.getElementById('corr-rows');
+  var or = document.getElementById('offset-rows');
+  cr.innerHTML = ''; or.innerHTML = '';
+  SITES.forEach(function(s) {
+    var r1 = document.createElement('div'); r1.className = 'orow';
+    r1.innerHTML = '<label>'+s.short+'</label><input type="number" step="0.1" id="corr-'+s.id+'" value="'+corrs[s.id]+'" />';
+    cr.appendChild(r1);
+    var r2 = document.createElement('div'); r2.className = 'orow';
+    r2.innerHTML = '<label>'+s.short+'</label><input type="number" step="0.5" id="offset-'+s.id+'" value="'+offsets[s.id]+'" />';
+    or.appendChild(r2);
+  });
+  document.getElementById('sdlg').classList.add('open');
+}
+
+function closeDlg() { document.getElementById('sdlg').classList.remove('open'); }
+
+function saveSettings() {
+  var corrs = {}, offsets = {};
+  SITES.forEach(function(s) {
+    var ce = document.getElementById('corr-'+s.id);
+    var oe = document.getElementById('offset-'+s.id);
+    corrs[s.id]   = ce ? parseFloat(ce.value) : s.defCorr;
+    offsets[s.id] = oe ? parseFloat(oe.value) : s.defOffset;
+  });
+  setLSJson('dm_corrections', corrs);
+  setLSJson('dm_offsets',     offsets);
+  closeDlg();
+  // Reload forecasts with new settings
+  document.getElementById('sstrip').innerHTML = '';
+  document.getElementById('scont').innerHTML  = '';
+  document.getElementById('alert-banner').style.display = 'none';
+  run();
+}
+
+// ── MAIN ───────────────────────────────────────────────────────────────────
+async function run() {
+  var dot  = document.getElementById('sdot');
+  var stxt = document.getElementById('stxt');
+  var strip = document.getElementById('sstrip');
+  var cont  = document.getElementById('scont');
+
+  dot.className = 'loading';
+  var corrs   = getCorrections();
+  var offsets = getOffsets();
+
+  try {
+    var results = [];
+    for(var i = 0; i < SITES.length; i++) {
+      var site = SITES[i];
+      stxt.textContent = 'Fetching ' + site.short + '\u2026';
+      var nights = await fetchForecast(site, corrs[site.id], offsets[site.id]);
+      results.push({site: site, nights: nights});
+      strip.appendChild(renderCard(site, nights));
+      cont.appendChild(renderSite(site, nights));
+    }
+    renderAlert(results);
+    dot.className = 'ok';
+    stxt.textContent = 'Live \u00b7 ECMWF \u00b7 ICON \u00b7 GFS \u00b7 ARPEGE';
+  } catch(e) {
+    dot.className = 'error';
+    stxt.textContent = 'Fetch failed';
+    var em = document.getElementById('errmsg');
+    em.style.display = 'block';
+    em.textContent   = 'Forecast fetch failed: ' + e.message;
+    console.error(e);
+  }
+}
+
+document.getElementById('ftime').textContent = 'Generated ' + new Date().toLocaleString('en-GB', {
+  day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', timeZoneName:'short'
+});
+
+run();
+</script>
+</body>
+</html>
