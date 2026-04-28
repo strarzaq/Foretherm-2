@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Demetherm — Frost Monitor v1.3</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=Share+Tech+Mono&display=swap');
+
+    :root {
+      /* Brand colours extracted from logo */
+      --brown-dark:   #3d1f0a;
+      --brown:        #6b3a1f;
+      --brown-mid:    #8b4e28;
+      --brown-light:  #c47a3a;
+      --orange:       #e8751a;
+      --orange-light: #f0a050;
+
+      /* UI surface palette — warm dark */
+      --bg:           #1a1008;
+      --bg2:          #201408;
+      --surface:      #261a0c;
+      --surface2:     #2e200f;
+      --border:       #3d2810;
+      --border2:      #503518;
+
+      /* Text */
+      --text:         #f0e0c8;
+      --muted:        #9a7858;
+      --muted2:       #c89060;
+
+      /* Status colours */
+      --freeze:       #e05050;
+      --cold:         #5090d8;
+      --high-hum:     var(--orange-light);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Source Sans 3', sans-serif;
+      min-height: 100vh;
+      font-size: 14px;
+    }
+
+    /* ── Header ─────────────────────────────────────── */
+    header {
+      background: var(--brown-dark);
+      border-bottom: 2px solid var(--brown);
+      padding: 0 24px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+    }
+
+    /* Shield + flame SVG — matches logo exactly */
+    .logo-mark { width: 36px; height: 36px; flex-shrink: 0; }
+
+    .logo-wordmark {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.5em;
+      line-height: 1;
+      color: var(--text);
+      letter-spacing: 0.5px;
+    }
+
+    .logo-wordmark span {
+      font-weight: 700;
+      color: var(--orange);
+    }
+
+    .logo-sub {
+      display: block;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.42em;
+      color: var(--muted2);
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    .pill {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.72em;
+      padding: 3px 10px;
+      border-radius: 2px;
+      border: 1px solid var(--border2);
+      color: var(--muted);
+      letter-spacing: 1px;
+    }
+    .pill.ok  { border-color: var(--orange); color: var(--orange); }
+    .pill.err { border-color: var(--freeze); color: var(--freeze); }
+
+    .header-spacer { flex: 1; }
+
+    #last-refresh {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.72em;
+      color: var(--muted);
+    }
+
+    /* ── Main ───────────────────────────────────────── */
+    main { padding: 24px; max-width: 1280px; margin: 0 auto; }
+
+    /* ── Config bar ─────────────────────────────────── */
+    .config-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .config-bar input {
+      flex: 1;
+      min-width: 280px;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 9px 14px;
+      border-radius: 2px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.85em;
+    }
+    .config-bar input:focus {
+      outline: none;
+      border-color: var(--orange);
+      background: var(--surface2);
+    }
+    .config-bar input::placeholder { color: var(--muted); }
+
+    .btn-connect {
+      background: var(--brown);
+      color: var(--text);
+      border: 1px solid var(--brown-light);
+      padding: 9px 22px;
+      border-radius: 2px;
+      font-family: 'Source Sans 3', sans-serif;
+      font-size: 0.95em;
+      font-weight: 600;
+      letter-spacing: 1px;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .btn-connect:hover { background: var(--brown-mid); }
+
+    /* ── Status bar ─────────────────────────────────── */
+    .status-bar {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.75em;
+      color: var(--muted);
+      margin-bottom: 20px;
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      letter-spacing: 0.5px;
+      border-left: 2px solid var(--border2);
+      padding-left: 12px;
+    }
+    .status-bar .val { color: var(--muted2); }
+
+    /* ── Section title ──────────────────────────────── */
+    .section-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 0.85em;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted2);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-title::before {
+      content: '';
+      width: 3px;
+      height: 14px;
+      background: var(--orange);
+      border-radius: 1px;
+      flex-shrink: 0;
+    }
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Node cards ─────────────────────────────────── */
+    .readings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+
+    .node-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .node-card.has-freeze {
+      border-color: rgba(224,80,80,0.6);
+      box-shadow: 0 0 12px rgba(224,80,80,0.1);
+    }
+    .node-card.has-cold {
+      border-color: rgba(80,144,216,0.5);
+      box-shadow: 0 0 12px rgba(80,144,216,0.08);
+    }
+
+    .node-header {
+      background: var(--brown-dark);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .node-name {
+      font-family: 'Playfair Display', serif;
+      font-weight: 700;
+      font-size: 1em;
+      color: var(--orange-light);
+      letter-spacing: 1px;
+    }
+
+    .node-badge {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.62em;
+      letter-spacing: 1px;
+      color: var(--muted2);
+    }
+    .node-badge.offline { color: var(--freeze); }
+
+    .node-body { padding: 10px 12px; }
+
+    .sensor-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 5px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .sensor-row:last-child { border-bottom: none; }
+
+    .sensor-label {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.7em;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+    }
+
+    .sensor-val {
+      font-family: 'Source Sans 3', sans-serif;
+      font-weight: 600;
+      font-size: 1.1em;
+      color: var(--text);
+    }
+    .sensor-val.freeze {
+      color: var(--freeze);
+      text-shadow: 0 0 6px rgba(224,80,80,0.35);
+    }
+    .sensor-val.cold   { color: var(--cold); }
+    .sensor-val.hi-hum { color: var(--high-hum); }
+    .sensor-val.na     { color: var(--border2); font-size: 0.85em; }
+
+    .no-data {
+      color: var(--muted);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.82em;
+      padding: 40px;
+      text-align: center;
+      letter-spacing: 1px;
+    }
+
+    /* ── Chart ──────────────────────────────────────── */
+    .chart-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+    .chart-note {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.7em;
+      color: var(--muted);
+      margin-bottom: 10px;
+      letter-spacing: 0.5px;
+    }
+    .chart-wrap { position: relative; height: 380px; }
+
+    /* ── Table ──────────────────────────────────────── */
+    .table-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 16px;
+    }
+    .table-wrap { overflow-x: auto; }
+
+    table { border-collapse: collapse; width: 100%; font-size: 0.78em; }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 5px 10px;
+      text-align: center;
+      white-space: nowrap;
+    }
+    th {
+      background: var(--bg2);
+      color: var(--muted2);
+      font-family: 'Share Tech Mono', monospace;
+      font-weight: 400;
+      letter-spacing: 0.5px;
+    }
+    td { font-family: 'Share Tech Mono', monospace; color: var(--text); }
+    td.freeze  { color: var(--freeze); }
+    td.cold    { color: var(--cold); }
+    td.hi-hum  { color: var(--high-hum); }
+    td.na      { color: var(--border2); }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.018); }
+
+    /* ── Footer ─────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding: 24px;
+      color: var(--border2);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.72em;
+      letter-spacing: 2px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <!-- Shield + flame matching Demetherm logo -->
+    <svg class="logo-mark" viewBox="0 0 36 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- Shield body -->
+      <path d="M18 1L2 8V20C2 30 10 38 18 41C26 38 34 30 34 20V8L18 1Z"
+            fill="#3d1f0a" stroke="#6b3a1f" stroke-width="1.2"/>
+      <!-- Flame outer -->
+      <path d="M18 10C18 10 12 16 12 22C12 25.5 14.5 28.5 18 29C21.5 28.5 24 25.5 24 22C24 19 22 16 20 14C20 17 18.5 18.5 18 19C17 17 17.5 13 18 10Z"
+            fill="#e8751a"/>
+      <!-- Flame inner highlight -->
+      <path d="M18 16C18 16 15 20 15 23C15 25 16.3 27 18 27C19.7 27 21 25 21 23C21 20.5 19.5 18 18 16Z"
+            fill="#f0a050" opacity="0.85"/>
+    </svg>
+    <div>
+      <div class="logo-wordmark">Deme<span>therm</span>
+        <span class="logo-sub">Frost Monitor v1.1</span>
+      </div>
+    </div>
+  </div>
+
+  <span class="pill" id="conn-pill">OFFLINE</span>
+  <div class="header-spacer"></div>
+  <span id="last-refresh">—</span>
+</header>
+
+<main>
+
+  <div class="config-bar">
+    <input type="text" id="sheet-id" placeholder="Paste Google Sheet ID here...">
+    <button class="btn-connect" onclick="loadData()">Connect</button>
+  </div>
+
+  <div class="status-bar">
+    <span>ROWS <span class="val" id="s-rows">—</span></span>
+    <span>NODES <span class="val" id="s-nodes">—</span></span>
+    <span>LATEST <span class="val" id="s-latest">—</span></span>
+  </div>
+
+  <div class="section-title">Live Readings</div>
+  <div class="readings-grid" id="readings-grid">
+    <div class="no-data">Enter a Google Sheet ID above and click Connect</div>
+  </div>
+
+  <div class="section-title">Temperature History</div>
+  <div class="chart-section">
+    <div class="chart-note">Click legend entries to toggle lines — T1 shown by default, T2 / TA / H% hidden</div>
+    <div class="chart-wrap"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="section-title">Raw Data — Last 50 Rows</div>
+  <div class="table-section">
+    <div class="table-wrap" id="table-wrap">
+      <div class="no-data">No data loaded</div>
+    </div>
+  </div>
+
+</main>
+
+<footer>DEMETHERM &nbsp;&#9632;&nbsp; FROST PROTECTION SYSTEM &nbsp;&#9632;&nbsp; V1.1</footer>
+
+<script>
+// ── URL param pre-fill ────────────────────────────────────────
+const params = new URLSearchParams(window.location.search);
+if (params.get('sheet')) document.getElementById('sheet-id').value = params.get('sheet');
+
+// ── State ────────────────────────────────────────────────────
+let chart = null;
+let parsedRows = [];
+let detectedNodes = [];
+
+// Warm palette matching brand: browns/oranges for temp, muted for humidity
+const tempColors = ['#e8751a','#c8a050','#d4603a','#b87030','#e09040','#c06028'];
+const humColors  = ['#5a3818','#483018','#503020','#483020','#503818','#483818'];
+
+function csvUrl(id) {
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=Data`;
+}
+
+// ── Load ──────────────────────────────────────────────────────
+function loadData() {
+  const id = document.getElementById('sheet-id').value.trim();
+  if (!id) { alert('Please enter a Sheet ID'); return; }
+
+  const url = new URL(window.location);
+  url.searchParams.set('sheet', id);
+  window.history.replaceState({}, '', url);
+
+  const pill = document.getElementById('conn-pill');
+  pill.textContent = 'LOADING';
+  pill.className = 'pill';
+
+  Papa.parse(csvUrl(id), {
+    download: true,
+    header: true,
+    skipEmptyLines: true,
+    complete(results) {
+      if (!results.data || results.data.length === 0) {
+        pill.textContent = 'NO DATA'; pill.className = 'pill err'; return;
+      }
+      parsedRows = results.data;
+      detectNodes(results.meta.fields);
+      renderAll();
+      pill.textContent = 'ONLINE'; pill.className = 'pill ok';
+      document.getElementById('last-refresh').textContent =
+        new Date().toLocaleTimeString();
+    },
+    error(err) {
+      pill.textContent = 'ERROR'; pill.className = 'pill err';
+      console.error(err);
+    }
+  });
+}
+
+// ── Detect active nodes (check for real data, not just column headers) ───
+function detectNodes(fields) {
+  detectedNodes = [];
+  for (let n = 1; n <= 6; n++) {
+    const col = 'N' + n + '_T1';
+    if (!fields.includes(col)) continue;
+    const hasData = parsedRows.some(r => r[col] && r[col] !== 'NA' && r[col].trim() !== '');
+    if (hasData) detectedNodes.push(n);
+  }
+}
+
+// ── Render all ────────────────────────────────────────────────
+function renderAll() {
+  document.getElementById('s-rows').textContent = parsedRows.length;
+  document.getElementById('s-nodes').textContent = detectedNodes.join(', ') || '—';
+  const latest = parsedRows[parsedRows.length - 1];
+  document.getElementById('s-latest').textContent = latest ? (latest['Timestamp'] || '—') : '—';
+  renderCards(latest);
+  renderChart();
+  renderTable();
+}
+
+// ── Cards ─────────────────────────────────────────────────────
+function parseNum(v) {
+  if (v === null || v === undefined || v === 'NA' || v === '') return NaN;
+  return parseFloat(String(v).replace(',', '.'));
+}
+
+function renderCards(row) {
+  const grid = document.getElementById('readings-grid');
+  if (!row || detectedNodes.length === 0) {
+    grid.innerHTML = '<div class="no-data">No data available</div>'; return;
+  }
+  grid.innerHTML = '';
+
+  detectedNodes.forEach(n => {
+    const t1 = parseNum(row['N' + n + '_T1']);
+    const t2 = parseNum(row['N' + n + '_T2']);
+    const ta = parseNum(row['N' + n + '_TA']);
+    const h  = parseNum(row['N' + n + '_H']);
+
+    function tempClass(v) {
+      if (isNaN(v)) return 'na';
+      if (v <= 0)   return 'freeze';
+      if (v <= 3)   return 'cold';
+      return '';
+    }
+    function humClass(v)  { return isNaN(v) ? 'na' : v >= 90 ? 'hi-hum' : ''; }
+    function tempStr(v)   { return isNaN(v) ? 'NA' : v.toFixed(2) + ' °C'; }
+    function humStr(v)    { return isNaN(v) ? 'NA' : v.toFixed(1) + ' %'; }
+
+    const hasFreeze = [t1,t2,ta].some(v => !isNaN(v) && v <= 0);
+    const hasCold   = !hasFreeze && [t1,t2,ta].some(v => !isNaN(v) && v <= 3);
+    const cardClass = 'node-card' + (hasFreeze ? ' has-freeze' : hasCold ? ' has-cold' : '');
+
+    grid.innerHTML += `
+      <div class="${cardClass}">
+        <div class="node-header">
+          <span class="node-name">Node ${n}</span>
+          <span class="node-badge">LIVE</span>
+        </div>
+        <div class="node-body">
+          <div class="sensor-row">
+            <span class="sensor-label">T1 Branch</span>
+            <span class="sensor-val ${tempClass(t1)}">${tempStr(t1)}</span>
+          </div>
+          <div class="sensor-row">
+            <span class="sensor-label">T2 Branch</span>
+            <span class="sensor-val ${tempClass(t2)}">${tempStr(t2)}</span>
+          </div>
+          <div class="sensor-row">
+            <span class="sensor-label">TA Ambient</span>
+            <span class="sensor-val ${tempClass(ta)}">${tempStr(ta)}</span>
+          </div>
+          <div class="sensor-row">
+            <span class="sensor-label">Humidity</span>
+            <span class="sensor-val ${humClass(h)}">${humStr(h)}</span>
+          </div>
+        </div>
+      </div>`;
+  });
+}
+
+// ── Chart ─────────────────────────────────────────────────────
+function renderChart() {
+  const timestamps = parsedRows.map(r => r['Timestamp'] || '');
+  const datasets = [];
+
+  detectedNodes.forEach((n, ni) => {
+    const color = tempColors[ni % tempColors.length];
+    const humColor = humColors[ni % humColors.length];
+
+    // T1 — visible by default
+    datasets.push({
+      label: `Node ${n} T1`,
+      data: parsedRows.map(r => { const v = parseNum(r['N'+n+'_T1']); return isNaN(v) ? null : v; }),
+      borderColor: color,
+      borderWidth: 2,
+      pointRadius: 1.5,
+      tension: 0.1,
+      spanGaps: true,
+      fill: false,
+      hidden: false,
+      yAxisID: 'yTemp',
+    });
+    // T2 — hidden by default
+    datasets.push({
+      label: `Node ${n} T2`,
+      data: parsedRows.map(r => { const v = parseNum(r['N'+n+'_T2']); return isNaN(v) ? null : v; }),
+      borderColor: color,
+      borderWidth: 1.2,
+      borderDash: [5, 3],
+      pointRadius: 0,
+      tension: 0.1,
+      spanGaps: true,
+      fill: false,
+      hidden: true,
+      yAxisID: 'yTemp',
+    });
+    // TA — hidden by default
+    datasets.push({
+      label: `Node ${n} TA`,
+      data: parsedRows.map(r => { const v = parseNum(r['N'+n+'_TA']); return isNaN(v) ? null : v; }),
+      borderColor: color,
+      borderWidth: 1.2,
+      borderDash: [2, 3],
+      pointRadius: 0,
+      tension: 0.1,
+      spanGaps: true,
+      fill: false,
+      hidden: true,
+      yAxisID: 'yTemp',
+    });
+    // H% — hidden by default, right axis
+    datasets.push({
+      label: `Node ${n} H%`,
+      data: parsedRows.map(r => { const v = parseNum(r['N'+n+'_H']); return isNaN(v) ? null : v; }),
+      borderColor: humColor,
+      borderWidth: 1,
+      pointRadius: 0,
+      tension: 0.2,
+      spanGaps: true,
+      fill: false,
+      hidden: true,
+      yAxisID: 'yHum',
+    });
+  });
+
+  const ctx = document.getElementById('chart').getContext('2d');
+  if (chart) chart.destroy();
+
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: timestamps, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: {
+            color: '#9a7858',
+            font: { size: 11, family: 'Share Tech Mono' },
+            boxWidth: 14,
+            padding: 12,
+          }
+        },
+        tooltip: {
+          backgroundColor: '#261a0c',
+          borderColor: '#3d2810',
+          borderWidth: 1,
+          titleColor: '#f0a050',
+          bodyColor: '#f0e0c8',
+          titleFont: { family: 'Share Tech Mono', size: 11 },
+          bodyFont: { family: 'Share Tech Mono', size: 11 },
+          callbacks: {
+            label: c => {
+              const v = c.parsed.y;
+              const isH = c.dataset.label.includes('H%');
+              return c.dataset.label + ': ' +
+                (v === null ? 'NA' : isH ? v.toFixed(1) + ' %' : v.toFixed(2) + ' °C');
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#9a7858', maxTicksLimit: 10, font: { size: 10, family: 'Share Tech Mono' } },
+          grid: { color: '#261a0c' }
+        },
+        yTemp: {
+          type: 'linear',
+          position: 'left',
+          ticks: {
+            color: '#9a7858',
+            font: { size: 10, family: 'Share Tech Mono' },
+            callback: v => v.toFixed(1) + '°'
+          },
+          grid: { color: '#2e200f' },
+          beginAtZero: false,
+        },
+        yHum: {
+          type: 'linear',
+          position: 'right',
+          min: 0, max: 100,
+          ticks: {
+            color: '#5a3818',
+            font: { size: 10, family: 'Share Tech Mono' },
+            callback: v => v + '%'
+          },
+          grid: { drawOnChartArea: false },
+        }
+      }
+    }
+  });
+}
+
+// ── Table ─────────────────────────────────────────────────────
+function renderTable() {
+  const wrap = document.getElementById('table-wrap');
+  if (parsedRows.length === 0) { wrap.innerHTML = '<div class="no-data">No data</div>'; return; }
+
+  const last50 = parsedRows.slice(-50).reverse();
+  const cols = ['Timestamp'];
+  detectedNodes.forEach(n => cols.push(
+    'N'+n+'_T1','N'+n+'_T2','N'+n+'_TA','N'+n+'_H'
+  ));
+
+  let html = '<table><thead><tr>';
+  cols.forEach(c => { html += '<th>' + c.replace(/_/g,' ') + '</th>'; });
+  html += '</tr></thead><tbody>';
+
+  last50.forEach(row => {
+    html += '<tr>';
+    cols.forEach(c => {
+      if (c === 'Timestamp') {
+        html += '<td>' + (row[c] || '—') + '</td>';
+      } else {
+        const v = parseNum(row[c]);
+        const isH = c.endsWith('_H');
+        if (isNaN(v)) {
+          html += '<td class="na">NA</td>';
+        } else if (isH) {
+          html += `<td class="${v >= 90 ? 'hi-hum' : ''}">${v.toFixed(1)}%</td>`;
+        } else {
+          html += `<td class="${v <= 0 ? 'freeze' : v <= 3 ? 'cold' : ''}">${v.toFixed(2)}</td>`;
+        }
+      }
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+// ── Auto-refresh every 5 minutes ─────────────────────────────
+setInterval(() => {
+  const id = document.getElementById('sheet-id').value.trim();
+  if (id) loadData();
+}, 300000);
+
+if (params.get('sheet')) loadData();
+</script>
+</body>
+</html>
